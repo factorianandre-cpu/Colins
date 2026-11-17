@@ -226,9 +226,10 @@ export async function updateTask(
     params_json: "params_json",
   };
   for (const [k, c] of Object.entries(col)) {
-    if (k in patch) {
+    // نتجاهل undefined صراحةً (حقل غير مطلوب في هذه الرقعة) — أما null فهي قيمة مقصودة تمسح الحقل
+    if (k in patch && (patch as Record<string, unknown>)[k] !== undefined) {
       sets.push(`${c} = ?`);
-      args.push((patch as Record<string, unknown>)[k] as InValue ?? null);
+      args.push((patch as Record<string, unknown>)[k] as InValue);
     }
   }
   sets.push("attempts_json = ?");

@@ -17,20 +17,27 @@ export type ErrorClass = "disabled" | "exhausted" | "provider" | "params" | "tem
 // أنماط رسائل نفاد الرصيد (بما فيها الأنماط الصينية الشائعة لدى المزودين)
 const EXHAUSTED_RE =
   /insufficient|quota|balance|credit|out of credits|exhausted|充值|余额不足|\b402\b/i;
-// أنماط رسائل رفض المفتاح
+// أنماط رسائل رفض المفتاح — مطابقة لعمود disabled في جدول 4.2 من المواصفة
 const DISABLED_RE =
-  /invalid api key|unauthorized|forbidden|authentication|invalid key|api key|apikey|\b401\b|\b403\b/i;
-// أنماط موديل غير مدعوم
-const PROVIDER_RE = /model not found|unsupported model|unknown model|not a valid model/i;
+  /invalid api key|unauthorized|forbidden|authentication|\b401\b|\b403\b/i;
+// أنماط موديل غير مدعوم — تشمل الصيغة المقاسة فعليًا لدى kie:
+// "The model name you specified is not supported. ..." (كود 422)
+const PROVIDER_RE =
+  /model not found|unsupported model|unknown model|not a valid model|(model|models)[^.]{0,80}not supported/i;
 
+/**
+ * ترتيب الفحص يطابق جدول 4.2 من المواصفة حرفيًا:
+ * disabled → exhausted (قبل فحص 400 لأن بعض المزودين يرسلون نفاد الرصيد بحالة 400 أو جسم بحالة 200)
+ * → provider → params (توقف فوري) → temporary.
+ */
 export function classifyProviderError(status: number | undefined, message: string): ErrorClass {
   const m = (message || "").toLowerCase();
 
-  // 1) نفاد الرصيد أولًا — قبل فحص 400 لأن بعض المزودين يرسلونه بحالة 400 أو داخل جسم بحالة 200
-  if (status === 402 || EXHAUSTED_RE.test(m)) return "exhausted";
-
-  // 2) مفتاح مرفوض
+  // 1) مفتاح مرفوض: HTTP 401/403 أو رسالة توثيق
   if (status === 401 || status === 403 || DISABLED_RE.test(m)) return "disabled";
+
+  // 2) نفاد الرصيد: HTTP 402 أو رسائل الرصيد — يُفحص قبل 400 عمدًا
+  if (status === 402 || EXHAUSTED_RE.test(m)) return "exhausted";
 
   // 3) موديل غير مدعوم لدى المزود (بأكواد الطلب الخاطئ)
   if (PROVIDER_RE.test(m) && (status === 400 || status === 404 || status === 422 || status === undefined)) {

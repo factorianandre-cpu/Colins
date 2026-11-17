@@ -6,7 +6,7 @@
  * (ب) لوحة المهام — إحصائيات وقائمة تتحدث تلقائيًا كل ~5 ثوانٍ.
  * (ج) ربط السيرفر — الرابط المطلق لـ /mcp و JSON جاهز للنسخ لكل عميل.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -401,6 +401,9 @@ function TasksCard() {
 
 /* ============================ بطاقة الربط ============================ */
 
+// مستمع ثابت بلا أحداث — القيمة (origin) لا تتغير عبر عمر الصفحة، والنمط المعتمد لـ useSyncExternalStore
+const subscribeNoop = () => () => {};
+
 const TOOL_CHIPS: Array<[string, string]> = [
   ["generate_image", "توليد صورة من وصف نصي عبر gpt-image-2-6/flare-text-to-image"],
   ["generate_video", "توليد فيديو مع صوت متزامن أصلي، مع image-to-video اختياري"],
@@ -410,8 +413,9 @@ const TOOL_CHIPS: Array<[string, string]> = [
 ];
 
 function ConnectCard({ health }: { health: HealthInfo | null }) {
-  const [origin, setOrigin] = useState("");
-  useEffect(() => setOrigin(window.location.origin), []);
+  // قراءة origin المتصفح بالنمط المعتمد للقيم التي لا تُتاح أثناء SSR —
+  // لا فرق في الترطيب لأن useSyncExternalStore يعيد السnapshot الخادمي "" أولًا
+  const origin = useSyncExternalStore(subscribeNoop, () => window.location.origin, () => "");
   const mcpUrl = `${origin}/mcp`;
 
   const headersJson = health?.authRequired
@@ -522,26 +526,26 @@ export default function Dashboard() {
   const loadHealth = useCallback(async () => {
     try {
       const res = await fetch("/api/health", { cache: "no-store" });
-      setHealth((await res.json()) as HealthInfo);
+      if (res.ok) setHealth((await res.json()) as HealthInfo);
     } catch {
-      setHealth(null);
+      /* انقطاع شبكة عابر — نحتفظ بآخر حالة معروفة بدل الفلاش إلى «غير متصل» */
     }
   }, []);
 
   useEffect(() => {
-    loadHealth();
+    // التحميل الأول عبر مؤقت — setState داخل callback مؤقت (النمط المعتمد للقاعدة) لا في جسم التأثير مباشرة
+    const first = setTimeout(loadHealth, 0);
     const t = setInterval(loadHealth, 15000);
-    return () => clearInterval(t);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
   }, [loadHealth]);
 
   const refreshAll = useCallback(() => setTick((x) => x + 1), []);
-  const firstLoad = useRef(false);
-  useEffect(() => {
-    if (!firstLoad.current) firstLoad.current = true;
-  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100" dir="rtl">
+    <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100" dir="rtl">
       {/* الهيدر */}
       <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3">

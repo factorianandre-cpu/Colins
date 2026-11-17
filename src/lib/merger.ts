@@ -161,7 +161,7 @@ export function validatePublicVideoUrl(url: string): boolean {
 // يحمي من تزامن process مع get_task داخل نفس نسخة العمل (على Vercel يُضاف حماية زمنية عبر processKickedAt)
 const processInFlight = new Set<string>();
 
-async function kickProcess(jobId: string): Promise<{ terminal?: string; network?: boolean }> {
+async function kickProcess(taskId: string, jobId: string): Promise<{ terminal?: string; network?: boolean }> {
   if (processInFlight.has(jobId)) return {};
   processInFlight.add(jobId);
   try {
@@ -177,7 +177,8 @@ async function kickProcess(jobId: string): Promise<{ terminal?: string; network?
     // نجاح 200 → {"status":"done","videoUrl":...} — نجمع النتيجة للاستخدام الفوري
     const state = parseMergeStatus(body);
     if (state.status === "done") {
-      await updateMergeTask(jobId, { status: "completed", urls: [resultUrl(state, jobId)] });
+      // ⚠️ نحدّث مهمة Turso بـ taskId وليس jobId — jobId معرّف لدى الخدمة فقط
+      await updateMergeTask(taskId, { status: "completed", urls: [resultUrl(state, jobId)] });
       return {};
     }
     return {};
@@ -200,13 +201,14 @@ interface MergeTaskPatch {
 }
 
 async function updateMergeTask(taskId: string, patch: MergeTaskPatch): Promise<TaskRow | null> {
-  return updateTask(taskId, {
-    status: patch.status,
-    progress: patch.progress,
-    result_urls_json: patch.urls ? JSON.stringify(patch.urls) : undefined,
-    error_message: patch.error_message,
-    provider_task_id: patch.provider_task_id,
-  });
+  // نبني الرقعة من الحقول المعرَّفة فقط — تمرير undefined صراحةً يصفرّ الأعمدة في updateTask
+  const p: Parameters<typeof updateTask>[1] = {};
+  if (patch.status !== undefined) p.status = patch.status;
+  if (patch.progress !== undefined) p.progress = patch.progress;
+  if (patch.urls !== undefined) p.result_urls_json = JSON.stringify(patch.urls);
+  if (patch.error_message !== undefined) p.error_message = patch.error_message;
+  if (patch.provider_task_id !== undefined) p.provider_task_id = patch.provider_task_id;
+  return updateTask(taskId, p);
 }
 
 export interface RunMergeInput {
@@ -349,7 +351,7 @@ export async function runMerge(input: RunMergeInput): Promise<MergeOutcome> {
   });
 
   // إطلاق process خلفيًا وبمرة واحدة (خارج حلقة الاستعلام) — ننتظرها داخل الحلقة أدناه
-  const processPromise = kickProcess(jobId).then((r) => {
+  const processPromise = kickProcess(taskId, jobId).then((r) => {
     // نسجّل طابع الإطلاق في params_json للتنسيق عبر نسخ العمل المتعددة
     void updateTask(taskId, {
       params_json: JSON.stringify({ ...params, processKickedAt: new Date().toISOString() }),
@@ -443,7 +445,7 @@ export async function refreshMergeTask(task: TaskRow): Promise<TaskRow> {
       const newJobId = String(body.jobId ?? body.id ?? "");
       if (!newJobId) return task;
       await updateTask(task.id, { provider: "merger", provider_task_id: newJobId, status: "processing", progress: 5 });
-      void kickProcess(newJobId);
+      void kickProcess(task.id, newJobId);
       return (await getTask(task.id)) ?? task;
     } catch {
       return task; // شبكة — انتظر الاستدعاء التالي
@@ -486,7 +488,7 @@ export async function refreshMergeTask(task: TaskRow): Promise<TaskRow> {
       await updateTask(task.id, {
         params_json: JSON.stringify({ ...params, processKickedAt: new Date().toISOString() }),
       });
-      void kickProcess(jobId);
+      void kickProcess(task.id, jobId);
     }
 
     const p = Math.max(5, Math.min(99, state.progress || task.progress || 10));

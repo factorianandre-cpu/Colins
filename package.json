@@ -1,6 +1,6 @@
 {
-  "name": "nextjs_tailwind_shadcn_ts",
-  "version": "0.2.1",
+  "name": "media-generator-mcp",
+  "version": "1.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "db:push": "echo 'قاعدة البيانات Turso عبر HTTP — لا حاجة لأي ملف قاعدة محلي'"
+    "db:push": "echo 'قاعدة البيانات Turso عبر HTTP — لا حاجة لأي ملف قاعدة محلي'",
+    "e2e": "node scripts/e2e.ts",
+    "mock:kie": "node scripts/mock-kie.mjs",
+    "mock:merger": "node scripts/mock-merger.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

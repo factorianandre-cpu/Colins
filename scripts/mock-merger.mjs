@@ -92,7 +92,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const parts = url.pathname.split("/").filter(Boolean); // ["api","jobs",id,"process"?]
 
-  console.log(`[mock-merger] ${req.method} ${url.pathname}`);
+  console.log(`MOCK-MERGER] ${req.method} ${url.pathname}`);
 
   // GET /api/config
   if (url.pathname === "/api/config") {
@@ -206,4 +206,4 @@ function readBody(req) {
   });
 }
 
-server.listen(PORT, () => console.log(`[mock-merger] يعمل على ${PORT}`));
+server.listen(PORT, () => console.log(`MOCK-MERGER] يعمل على ${PORT}`));
